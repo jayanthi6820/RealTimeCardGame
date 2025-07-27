@@ -1,544 +1,785 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+// Game state
+let gameState = {
+    players: [
+        { id: 1, name: 'You', hand: [], isHuman: true },
+        { id: 2, name: 'Player 2', hand: [], isHuman: false },
+        { id: 3, name: 'Player 3', hand: [], isHuman: false },
+        { id: 4, name: 'Player 4', hand: [], isHuman: false }
+    ],
+    currentPlayer: 0,
+    direction: 1, // 1 for clockwise, -1 for counterclockwise
+    topCard: null,
+    drawPile: [],
+    discardPile: [],
+    gameActive: true,
+    winner: null,
+    lastAction: 'Game Started!',
+    unoCallRequired: {},
+    wildColorChosen: null,
+    pendingWildCard: null
+};
+
+// Card types and colors
+const COLORS = ['red', 'blue', 'green', 'yellow'];
+const NUMBERS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const ACTION_CARDS = ['skip', 'reverse', 'draw-two'];
+const WILD_CARDS = ['wild', 'wild-draw-four'];
+
+// DOM elements
+const drawBtn = document.getElementById('drawBtn');
+const unoBtn = document.getElementById('unoBtn');
+const newGameBtn = document.getElementById('newGameBtn');
+const colorPicker = document.getElementById('colorPicker');
+const winnerModal = document.getElementById('winnerModal');
+const topCardElement = document.getElementById('topCard');
+
+// Initialize game
+function initGame() {
+    createDeck();
+    dealCards();
+    setTopCard();
+    updateDisplay();
+    
+    // Event listeners
+    drawBtn.addEventListener('click', drawCard);
+    unoBtn.addEventListener('click', callUno);
+    newGameBtn.addEventListener('click', newGame);
+    
+    // Color picker events
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            chooseWildColor(e.target.dataset.color);
+        });
+    });
+    
+    // Player hand click events
+    document.getElementById('playerHand').addEventListener('click', (e) => {
+        if (e.target.classList.contains('card') && gameState.currentPlayer === 0) {
+            playCard(e.target);
+        }
+    });
 }
 
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    color: #333;
-    overflow-x: hidden;
-}
-
-.game-container {
-    max-width: 1400px;
-    margin: 0 auto;
-    background: rgba(255, 255, 255, 0.95);
-    min-height: 100vh;
-    box-shadow: 0 0 50px rgba(0, 0, 0, 0.2);
-}
-
-.game-header {
-    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-    color: white;
-    text-align: center;
-    padding: 20px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.game-header h1 {
-    font-size: 2rem;
-    margin-bottom: 5px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.game-header p {
-    font-size: 1rem;
-    opacity: 0.9;
-}
-
-.game-board {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    height: calc(100vh - 120px);
-    padding: 20px;
-    gap: 20px;
-}
-
-.middle-section {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 20px;
-    align-items: center;
-}
-
-.player-area {
-    background: #f8f9fa;
-    border-radius: 15px;
-    padding: 15px;
-    transition: all 0.3s ease;
-    border: 3px solid transparent;
-}
-
-.player-area.active {
-    background: linear-gradient(135deg, #74b9ff, #0984e3);
-    color: white;
-    border-color: #fdcb6e;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-}
-
-.player-info {
-    text-align: center;
-    margin-bottom: 15px;
-}
-
-.player-info h3 {
-    font-size: 1.2rem;
-    margin-bottom: 5px;
-}
-
-.card-count {
-    font-size: 0.9rem;
-    opacity: 0.8;
-    font-weight: 500;
-}
-
-.player-hand {
-    display: flex;
-    gap: 5px;
-    justify-content: center;
-    flex-wrap: wrap;
-    min-height: 80px;
-}
-
-.player-hand.vertical {
-    flex-direction: column;
-    align-items: center;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.player-bottom .player-hand {
-    gap: 8px;
-    padding: 10px;
-}
-
-.card {
-    width: 60px;
-    height: 90px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 1.2rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    position: relative;
-    user-select: none;
-}
-
-.card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-}
-
-.player-bottom .card:hover {
-    transform: translateY(-10px);
-}
-
-.card.playable {
-    border-color: #fdcb6e;
-    box-shadow: 0 0 15px rgba(253, 203, 110, 0.5);
-    animation: glow 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes glow {
-    from { box-shadow: 0 0 15px rgba(253, 203, 110, 0.5); }
-    to { box-shadow: 0 0 25px rgba(253, 203, 110, 0.8); }
-}
-
-.card-back {
-    background: linear-gradient(135deg, #2d3436, #636e72);
-    color: white;
-    font-size: 0.8rem;
-    text-align: center;
-}
-
-/* Card Colors */
-.card.red { background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; }
-.card.blue { background: linear-gradient(135deg, #3498db, #2980b9); color: white; }
-.card.green { background: linear-gradient(135deg, #27ae60, #229954); color: white; }
-.card.yellow { background: linear-gradient(135deg, #f1c40f, #f39c12); color: #333; }
-.card.wild { background: linear-gradient(45deg, #e74c3c 25%, #3498db 25%, #3498db 50%, #27ae60 50%, #27ae60 75%, #f1c40f 75%); color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
-
-/* Action Cards */
-.card.skip::after { content: '⊘'; position: absolute; top: 3px; right: 3px; font-size: 0.7rem; }
-.card.reverse::after { content: '↻'; position: absolute; top: 3px; right: 3px; font-size: 0.7rem; }
-.card.draw-two::after { content: '+2'; position: absolute; bottom: 3px; right: 3px; font-size: 0.6rem; }
-.card.wild-draw-four::after { content: '+4'; position: absolute; bottom: 3px; right: 3px; font-size: 0.6rem; }
-
-.game-center {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
-    background: white;
-    border-radius: 20px;
-    padding: 30px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-    min-width: 300px;
-}
-
-.deck-area {
-    display: flex;
-    gap: 30px;
-    align-items: center;
-}
-
-.draw-pile, .discard-pile {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.draw-pile .card {
-    width: 80px;
-    height: 120px;
-    font-size: 1rem;
-}
-
-.discard-pile .card {
-    width: 80px;
-    height: 120px;
-    font-size: 2rem;
-}
-
-.cards-remaining {
-    position: absolute;
-    bottom: -25px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #2d3436;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: bold;
-}
-
-.game-status {
-    text-align: center;
-    background: #f1f2f6;
-    padding: 20px;
-    border-radius: 15px;
-    width: 100%;
-    max-width: 300px;
-}
-
-.current-player {
-    font-size: 1.3rem;
-    font-weight: bold;
-    color: #2d3436;
-    margin-bottom: 8px;
-}
-
-.game-direction {
-    font-size: 1.1rem;
-    color: #636e72;
-    margin-bottom: 8px;
-}
-
-.last-action {
-    font-size: 0.9rem;
-    color: #636e72;
-    font-style: italic;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-.btn {
-    padding: 12px 20px;
-    border: none;
-    border-radius: 25px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-}
-
-.btn:active {
-    transform: translateY(0);
-}
-
-.btn-draw {
-    background: linear-gradient(135deg, #74b9ff, #0984e3);
-    color: white;
-}
-
-.btn-uno {
-    background: linear-gradient(135deg, #fd79a8, #e84393);
-    color: white;
-}
-
-.btn-new {
-    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-    color: white;
-}
-
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.color-picker {
-    display: none;
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: white;
-    padding: 30px;
-    border-radius: 20px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
-    text-align: center;
-}
-
-.color-picker.show {
-    display: block;
-    animation: slideIn 0.3s ease;
-}
-
-.color-picker h3 {
-    margin-bottom: 20px;
-    color: #2d3436;
-}
-
-.color-options {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-}
-
-.color-btn {
-    width: 60px;
-    height: 60px;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.color-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-}
-
-.color-btn.red { background: #e74c3c; }
-.color-btn.blue { background: #3498db; }
-.color-btn.green { background: #27ae60; }
-.color-btn.yellow { background: #f1c40f; }
-
-.modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    z-index: 1000;
-    animation: fadeIn 0.3s ease;
-}
-
-.modal.show {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal-content {
-    background: white;
-    padding: 40px;
-    border-radius: 20px;
-    text-align: center;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    animation: slideIn 0.3s ease;
-    max-width: 500px;
-    margin: 20px;
-}
-
-.modal-content h2 {
-    font-size: 2.5rem;
-    margin-bottom: 20px;
-    color: #2d3436;
-}
-
-.modal-content p {
-    font-size: 1.5rem;
-    margin-bottom: 20px;
-    color: #636e72;
-}
-
-.final-scores {
-    background: #f8f9fa;
-    padding: 20px;
-    border-radius: 10px;
-    margin: 20px 0;
-    text-align: left;
-}
-
-.final-scores h4 {
-    margin-bottom: 10px;
-    color: #2d3436;
-}
-
-.final-scores div {
-    margin: 5px 0;
-    padding: 5px 10px;
-    background: white;
-    border-radius: 5px;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes slideIn {
-    from { transform: translateY(-50px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-.rules {
-    background: #2d3436;
-    color: white;
-    padding: 30px;
-}
-
-.rules h3 {
-    font-size: 1.8rem;
-    margin-bottom: 20px;
-    color: #fdcb6e;
-    text-align: center;
-}
-
-.rules-content {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
-    max-width: 800px;
-    margin: 0 auto;
-}
-
-.rule-section h4 {
-    font-size: 1.2rem;
-    margin-bottom: 15px;
-    color: #74b9ff;
-}
-
-.rules ul {
-    list-style: none;
-    padding-left: 0;
-}
-
-.rules li {
-    padding: 8px 0;
-    padding-left: 25px;
-    position: relative;
-    line-height: 1.6;
-}
-
-.rules li:before {
-    content: "🎯";
-    position: absolute;
-    left: 0;
-}
-
-/* Responsive Design */
-@media (max-width: 1200px) {
-    .middle-section {
-        grid-template-columns: 1fr 2fr 1fr;
+// Create a full UNO deck
+function createDeck() {
+    gameState.drawPile = [];
+    
+    // Number cards (0-9) for each color
+    COLORS.forEach(color => {
+        NUMBERS.forEach(number => {
+            gameState.drawPile.push({ color, type: 'number', value: number });
+            // Add second copy of numbers 1-9
+            if (number !== '0') {
+                gameState.drawPile.push({ color, type: 'number', value: number });
+            }
+        });
+        
+        // Action cards (2 of each per color)
+        ACTION_CARDS.forEach(action => {
+            gameState.drawPile.push({ color, type: 'action', value: action });
+            gameState.drawPile.push({ color, type: 'action', value: action });
+        });
+    });
+    
+    // Wild cards (4 of each)
+    for (let i = 0; i < 4; i++) {
+        gameState.drawPile.push({ color: 'wild', type: 'wild', value: 'wild' });
+        gameState.drawPile.push({ color: 'wild', type: 'wild', value: 'wild-draw-four' });
     }
     
-    .game-center {
-        min-width: 250px;
-        padding: 20px;
+    // Shuffle deck
+    shuffleDeck();
+}
+
+// Shuffle the deck
+function shuffleDeck() {
+    for (let i = gameState.drawPile.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [gameState.drawPile[i], gameState.drawPile[j]] = [gameState.drawPile[j], gameState.drawPile[i]];
     }
 }
 
-@media (max-width: 768px) {
-    .game-board {
-        grid-template-rows: auto auto auto;
-        height: auto;
-        min-height: calc(100vh - 120px);
-    }
+// Deal initial cards to players
+function dealCards() {
+    gameState.players.forEach(player => {
+        player.hand = [];
+        for (let i = 0; i < 7; i++) {
+            if (gameState.drawPile.length > 0) {
+                player.hand.push(gameState.drawPile.pop());
+            }
+        }
+    });
+}
+
+// Set the initial top card
+function setTopCard() {
+    let card;
+    do {
+        if (gameState.drawPile.length === 0) {
+            createDeck();
+        }
+        card = gameState.drawPile.pop();
+    } while (card.type === 'wild'); // Don't start with wild cards
     
-    .middle-section {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto auto auto;
-        gap: 15px;
-    }
+    gameState.topCard = card;
+    gameState.discardPile = [card];
     
-    .player-area {
-        padding: 10px;
-    }
-    
-    .card {
-        width: 45px;
-        height: 70px;
-        font-size: 1rem;
-    }
-    
-    .discard-pile .card, .draw-pile .card {
-        width: 60px;
-        height: 90px;
-        font-size: 1.5rem;
-    }
-    
-    .rules-content {
-        grid-template-columns: 1fr;
-        gap: 20px;
-    }
-    
-    .game-header h1 {
-        font-size: 2rem;
-    }
-    
-    .action-buttons {
-        flex-direction: column;
-        width: 100%;
-    }
-    
-    .btn {
-        width: 100%;
+    // Handle action cards as starting card
+    if (card.type === 'action') {
+        handleStartingActionCard(card);
     }
 }
 
-/* Animation for card dealing */
-.card-deal {
-    animation: dealCard 0.5s ease-out;
-}
-
-@keyframes dealCard {
-    from {
-        transform: translateY(-100px) rotate(180deg);
-        opacity: 0;
+// Handle starting action card
+function handleStartingActionCard(card) {
+    switch (card.value) {
+        case 'skip':
+            gameState.currentPlayer = getNextPlayer();
+            gameState.lastAction = 'Starting card is Skip - Player 2 starts!';
+            break;
+        case 'reverse':
+            gameState.direction = -1;
+            gameState.currentPlayer = 3; // Start with Player 4 in reverse
+            gameState.lastAction = 'Starting card is Reverse - Player 4 starts!';
+            break;
+        case 'draw-two':
+            gameState.players[1].hand.push(drawCardFromPile());
+            gameState.players[1].hand.push(drawCardFromPile());
+            gameState.currentPlayer = 2;
+            gameState.lastAction = 'Starting card is Draw Two - Player 2 draws 2 cards, Player 3 starts!';
+            break;
     }
-    to {
-        transform: translateY(0) rotate(0deg);
-        opacity: 1;
+}
+
+// Draw a card from the draw pile
+function drawCardFromPile() {
+    if (gameState.drawPile.length === 0) {
+        reshuffleDiscardPile();
+    }
+    if (gameState.drawPile.length === 0) {
+        // Emergency: create new deck if still empty
+        createDeck();
+    }
+    return gameState.drawPile.pop();
+}
+
+// Reshuffle discard pile into draw pile
+function reshuffleDiscardPile() {
+    if (gameState.discardPile.length <= 1) return;
+    
+    const topCard = gameState.discardPile.pop();
+    gameState.drawPile = [...gameState.discardPile];
+    gameState.discardPile = [topCard];
+    
+    // Reset wild card colors
+    gameState.drawPile.forEach(card => {
+        if (card.type === 'wild') {
+            delete card.chosenColor;
+        }
+    });
+    
+    shuffleDeck();
+}
+
+// Check if a card can be played
+function canPlayCard(card, topCard) {
+    if (card.type === 'wild') return true;
+    if (card.color === topCard.color) return true;
+    if (topCard.chosenColor && card.color === topCard.chosenColor) return true;
+    if (card.type === 'number' && topCard.type === 'number' && card.value === topCard.value) return true;
+    if (card.type === 'action' && topCard.type === 'action' && card.value === topCard.value) return true;
+    return false;
+}
+
+// Play a card
+function playCard(cardElement) {
+    if (gameState.currentPlayer !== 0 || !gameState.gameActive) return;
+    
+    const cardIndex = parseInt(cardElement.dataset.index);
+    const card = gameState.players[0].hand[cardIndex];
+    
+    if (!canPlayCard(card, gameState.topCard)) {
+        showMessage("You can't play that card!");
+        return;
+    }
+    
+    // Remove card from player's hand
+    gameState.players[0].hand.splice(cardIndex, 1);
+    
+    // Handle wild cards
+    if (card.type === 'wild') {
+        gameState.pendingWildCard = card;
+        showColorPicker();
+        return;
+    }
+    
+    // Play the card
+    executeCardPlay(card);
+}
+
+// Execute card play
+function executeCardPlay(card) {
+    gameState.topCard = card;
+    gameState.discardPile.push(card);
+    
+    const currentPlayerName = gameState.players[gameState.currentPlayer].name;
+    
+    // Handle action cards
+    if (card.type === 'action') {
+        handleActionCard(card);
+    } else if (card.type === 'number') {
+        gameState.lastAction = `${currentPlayerName} played ${card.color} ${card.value}`;
+    }
+    
+    // Check for winner
+    if (gameState.players[gameState.currentPlayer].hand.length === 0) {
+        endGame(gameState.currentPlayer);
+        return;
+    }
+    
+    // Check for UNO
+    if (gameState.players[gameState.currentPlayer].hand.length === 1) {
+        gameState.unoCallRequired[gameState.currentPlayer] = true;
+        if (gameState.currentPlayer === 0) {
+            unoBtn.classList.add('pulse');
+            showMessage("Don't forget to call UNO!");
+        } else {
+            // AI automatically calls UNO
+            gameState.unoCallRequired[gameState.currentPlayer] = false;
+            gameState.lastAction += ` - ${currentPlayerName} called UNO!`;
+        }
+    }
+    
+    // Move to next turn if not skipped by action card
+    if (!card.skipNextTurn) {
+        nextTurn();
+    }
+    
+    updateDisplay();
+    
+    // AI turns
+    if (!gameState.players[gameState.currentPlayer].isHuman && gameState.gameActive) {
+        setTimeout(aiTurn, 1000);
     }
 }
 
-/* UNO button pulse animation */
-.btn-uno.pulse {
-    animation: pulse 1s ease-in-out infinite;
+// Handle action cards
+function handleActionCard(card) {
+    const currentPlayerName = gameState.players[gameState.currentPlayer].name;
+    const nextPlayerIndex = getNextPlayer();
+    const nextPlayerName = gameState.players[nextPlayerIndex].name;
+    
+    switch (card.value) {
+        case 'skip':
+            gameState.lastAction = `${currentPlayerName} played Skip! ${nextPlayerName} is skipped.`;
+            nextTurn(); // Skip the next player
+            card.skipNextTurn = true;
+            break;
+            
+        case 'reverse':
+            gameState.direction *= -1;
+            gameState.lastAction = `${currentPlayerName} played Reverse! Direction changed.`;
+            updateDirectionDisplay();
+            break;
+            
+        case 'draw-two':
+            gameState.lastAction = `${currentPlayerName} played Draw Two! ${nextPlayerName} draws 2 cards and is skipped.`;
+            // Next player draws 2 cards
+            for (let i = 0; i < 2; i++) {
+                gameState.players[nextPlayerIndex].hand.push(drawCardFromPile());
+            }
+            nextTurn(); // Skip the next player's turn
+            card.skipNextTurn = true;
+            break;
+    }
 }
 
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
+// Handle wild card color choice
+function chooseWildColor(color) {
+    const card = gameState.pendingWildCard;
+    if (!card) return;
+    
+    card.chosenColor = color;
+    gameState.topCard = card;
+    gameState.discardPile.push(card);
+    
+    const currentPlayerName = gameState.players[gameState.currentPlayer].name;
+    
+    if (card.value === 'wild-draw-four') {
+        const nextPlayerIndex = getNextPlayer();
+        const nextPlayerName = gameState.players[nextPlayerIndex].name;
+        
+        for (let i = 0; i < 4; i++) {
+            gameState.players[nextPlayerIndex].hand.push(drawCardFromPile());
+        }
+        gameState.lastAction = `${currentPlayerName} played Wild Draw Four! ${nextPlayerName} draws 4 cards. Color is now ${color}.`;
+        nextTurn(); // Skip next player
+    } else {
+        gameState.lastAction = `${currentPlayerName} played Wild! Color is now ${color}.`;
+    }
+    
+    hideColorPicker();
+    gameState.pendingWildCard = null;
+    
+    // Check for winner
+    if (gameState.players[gameState.currentPlayer].hand.length === 0) {
+        endGame(gameState.currentPlayer);
+        return;
+    }
+    
+    // Check for UNO
+    if (gameState.players[gameState.currentPlayer].hand.length === 1) {
+        gameState.unoCallRequired[gameState.currentPlayer] = true;
+        if (gameState.currentPlayer === 0) {
+            unoBtn.classList.add('pulse');
+            showMessage("Don't forget to call UNO!");
+        } else {
+            gameState.unoCallRequired[gameState.currentPlayer] = false;
+            gameState.lastAction += ` - ${currentPlayerName} called UNO!`;
+        }
+    }
+    
+    nextTurn();
+    updateDisplay();
+    
+    if (!gameState.players[gameState.currentPlayer].isHuman && gameState.gameActive) {
+        setTimeout(aiTurn, 1000);
+    }
 }
+
+// Show color picker
+function showColorPicker() {
+    colorPicker.classList.add('show');
+}
+
+// Hide color picker
+function hideColorPicker() {
+    colorPicker.classList.remove('show');
+}
+
+// Get next player index
+function getNextPlayer() {
+    return (gameState.currentPlayer + gameState.direction + 4) % 4;
+}
+
+// Move to next turn
+function nextTurn() {
+    gameState.currentPlayer = getNextPlayer();
+}
+
+// Draw card action
+function drawCard() {
+    if (gameState.currentPlayer !== 0 || !gameState.gameActive) return;
+    
+    const card = drawCardFromPile();
+    gameState.players[0].hand.push(card);
+    
+    gameState.lastAction = "You drew a card";
+    
+    // Check if the drawn card can be played
+    if (canPlayCard(card, gameState.topCard)) {
+        updateDisplay();
+        showMessage("You can play the card you just drew!");
+        return;
+    }
+    
+    // End turn
+    nextTurn();
+    updateDisplay();
+    
+    if (!gameState.players[gameState.currentPlayer].isHuman && gameState.gameActive) {
+        setTimeout(aiTurn, 1000);
+    }
+}
+
+// Call UNO
+function callUno() {
+    if (gameState.currentPlayer !== 0) return;
+    
+    if (gameState.players[0].hand.length === 1) {
+        gameState.unoCallRequired[0] = false;
+        unoBtn.classList.remove('pulse');
+        gameState.lastAction = "You called UNO!";
+        updateDisplay();
+    } else {
+        showMessage("You can only call UNO when you have one card!");
+    }
+}
+
+// AI turn logic
+function aiTurn() {
+    if (!gameState.gameActive || gameState.players[gameState.currentPlayer].isHuman) return;
+    
+    const player = gameState.players[gameState.currentPlayer];
+    const playableCards = player.hand.filter(card => canPlayCard(card, gameState.topCard));
+    
+    if (playableCards.length > 0) {
+        // Choose a card to play (improved AI logic)
+        let cardToPlay = chooseAICard(playableCards, player);
+        
+        // Remove card from hand
+        const cardIndex = player.hand.indexOf(cardToPlay);
+        player.hand.splice(cardIndex, 1);
+        
+        // Handle wild cards
+        if (cardToPlay.type === 'wild') {
+            // AI chooses color based on most common color in hand
+            const chosenColor = chooseAIColor(player);
+            cardToPlay.chosenColor = chosenColor;
+            
+            if (cardToPlay.value === 'wild-draw-four') {
+                const nextPlayerIndex = getNextPlayer();
+                const nextPlayerName = gameState.players[nextPlayerIndex].name;
+                
+                for (let i = 0; i < 4; i++) {
+                    gameState.players[nextPlayerIndex].hand.push(drawCardFromPile());
+                }
+                gameState.lastAction = `${player.name} played Wild Draw Four! ${nextPlayerName} draws 4 cards. Color is now ${chosenColor}.`;
+                nextTurn(); // Skip next player
+            } else {
+                gameState.lastAction = `${player.name} played Wild! Color is now ${chosenColor}.`;
+            }
+        }
+        
+        gameState.topCard = cardToPlay;
+        gameState.discardPile.push(cardToPlay);
+        
+        // Handle action cards
+        if (cardToPlay.type === 'action') {
+            handleActionCard(cardToPlay);
+        } else if (cardToPlay.type === 'number') {
+            gameState.lastAction = `${player.name} played ${cardToPlay.color} ${cardToPlay.value}`;
+        }
+        
+        // Check for winner
+        if (player.hand.length === 0) {
+            endGame(gameState.currentPlayer);
+            return;
+        }
+        
+        // Auto-call UNO for AI
+        if (player.hand.length === 1) {
+            gameState.unoCallRequired[gameState.currentPlayer] = false;
+            gameState.lastAction += ` - ${player.name} called UNO!`;
+        }
+        
+        if (!cardToPlay.skipNextTurn) {
+            nextTurn();
+        }
+    } else {
+        // AI draws a card
+        const drawnCard = drawCardFromPile();
+        player.hand.push(drawnCard);
+        gameState.lastAction = `${player.name} drew a card`;
+        
+        // Check if AI can play the drawn card (30% chance to play immediately)
+        if (canPlayCard(drawnCard, gameState.topCard) && Math.random() < 0.3) {
+            setTimeout(aiTurn, 500);
+            return;
+        }
+        
+        nextTurn();
+    }
+    
+    updateDisplay();
+    
+    // Continue AI turns
+    if (!gameState.players[gameState.currentPlayer].isHuman && gameState.gameActive) {
+        setTimeout(aiTurn, 1500);
+    }
+}
+
+// Choose AI card with better strategy
+function chooseAICard(playableCards, player) {
+    // Prefer action cards when opponent has few cards
+    const opponentCards = gameState.players.map(p => p.hand.length).filter((count, index) => index !== gameState.currentPlayer);
+    const minOpponentCards = Math.min(...opponentCards);
+    
+    if (minOpponentCards <= 2) {
+        const actionCard = playableCards.find(card => card.type === 'action' && (card.value === 'skip' || card.value === 'draw-two'));
+        if (actionCard) return actionCard;
+    }
+    
+    // Prefer wild cards if hand is large
+    if (player.hand.length > 5) {
+        const wildCard = playableCards.find(card => card.type === 'wild');
+        if (wildCard) return wildCard;
+    }
+    
+    // Prefer matching color over matching number
+    const colorMatches = playableCards.filter(card => 
+        card.color === gameState.topCard.color || 
+        (gameState.topCard.chosenColor && card.color === gameState.topCard.chosenColor)
+    );
+    
+    if (colorMatches.length > 0) {
+        return colorMatches[Math.floor(Math.random() * colorMatches.length)];
+    }
+    
+    // Default: random playable card
+    return playableCards[Math.floor(Math.random() * playableCards.length)];
+}
+
+// Choose AI color for wild cards
+function chooseAIColor(player) {
+    const colorCounts = { red: 0, blue: 0, green: 0, yellow: 0 };
+    
+    player.hand.forEach(card => {
+        if (COLORS.includes(card.color)) {
+            colorCounts[card.color]++;
+        }
+    });
+    
+    // Choose color with most cards, or random if tied
+    const maxCount = Math.max(...Object.values(colorCounts));
+    const bestColors = Object.keys(colorCounts).filter(color => colorCounts[color] === maxCount);
+    
+    return bestColors[Math.floor(Math.random() * bestColors.length)];
+}
+
+// Update game display
+function updateDisplay() {
+    updatePlayerHands();
+    updateTopCard();
+    updateGameStatus();
+    updateDrawPile();
+    updatePlayerAreas();
+}
+
+// Update player hands display
+function updatePlayerHands() {
+    // Update human player's hand (Player 1)
+    const playerHand = document.getElementById('playerHand');
+    const player = gameState.players[0];
+    
+    playerHand.innerHTML = '';
+    player.hand.forEach((card, cardIndex) => {
+        const cardElement = createCardElement(card, cardIndex);
+        if (canPlayCard(card, gameState.topCard) && gameState.currentPlayer === 0) {
+            cardElement.classList.add('playable');
+        }
+        playerHand.appendChild(cardElement);
+    });
+    
+    // Update AI players' hands (show card backs)
+    for (let i = 1; i < 4; i++) {
+        const playerElement = document.getElementById(`player${i + 1}`);
+        const handElement = playerElement.querySelector('.player-hand');
+        const player = gameState.players[i];
+        
+        handElement.innerHTML = '';
+        for (let j = 0; j < player.hand.length; j++) {
+            const cardElement = document.createElement('div');
+            cardElement.className = 'card card-back';
+            cardElement.textContent = 'UNO';
+            handElement.appendChild(cardElement);
+        }
+    }
+}
+
+// Update player areas
+function updatePlayerAreas() {
+    gameState.players.forEach((player, index) => {
+        const playerElement = document.getElementById(`player${index + 1}`);
+        if (!playerElement) return;
+        
+        const countElement = playerElement.querySelector('.card-count');
+        if (!countElement) return;
+        
+        // Update card count
+        countElement.textContent = `${player.hand.length} cards`;
+        
+        // Update active player
+        if (index === gameState.currentPlayer) {
+            playerElement.classList.add('active');
+        } else {
+            playerElement.classList.remove('active');
+        }
+    });
+}
+
+// Create card element
+function createCardElement(card, index) {
+    const cardElement = document.createElement('div');
+    cardElement.className = `card ${card.color}`;
+    cardElement.dataset.index = index;
+    
+    if (card.type === 'number') {
+        cardElement.textContent = card.value;
+        cardElement.classList.add(`number-${card.value}`);
+    } else if (card.type === 'action') {
+        cardElement.classList.add(card.value);
+        switch (card.value) {
+            case 'skip': 
+                cardElement.textContent = 'Skip'; 
+                break;
+            case 'reverse': 
+                cardElement.textContent = 'Rev'; 
+                break;
+            case 'draw-two': 
+                cardElement.textContent = '+2'; 
+                break;
+        }
+    } else if (card.type === 'wild') {
+        cardElement.classList.add(card.value);
+        if (card.value === 'wild') {
+            cardElement.textContent = 'Wild';
+        } else {
+            cardElement.textContent = '+4';
+        }
+    }
+    
+    return cardElement;
+}
+
+// Update top card display
+function updateTopCard() {
+    const card = gameState.topCard;
+    if (!card) return;
+    
+    topCardElement.className = `card ${card.chosenColor || card.color}`;
+    
+    if (card.type === 'number') {
+        topCardElement.textContent = card.value;
+        topCardElement.classList.add(`number-${card.value}`);
+    } else if (card.type === 'action') {
+        topCardElement.classList.add(card.value);
+        switch (card.value) {
+            case 'skip': 
+                topCardElement.textContent = 'Skip'; 
+                break;
+            case 'reverse': 
+                topCardElement.textContent = 'Rev'; 
+                break;
+            case 'draw-two': 
+                topCardElement.textContent = '+2'; 
+                break;
+        }
+    } else if (card.type === 'wild') {
+        topCardElement.classList.add(card.value);
+        if (card.value === 'wild') {
+            topCardElement.textContent = 'Wild';
+        } else {
+            topCardElement.textContent = '+4';
+        }
+    }
+}
+
+// Update game status
+function updateGameStatus() {
+    const currentPlayerElement = document.querySelector('.current-player');
+    const lastActionElement = document.querySelector('.last-action');
+    
+    if (currentPlayerElement) {
+        currentPlayerElement.textContent = `${gameState.players[gameState.currentPlayer].name}'s Turn`;
+    }
+    
+    if (lastActionElement) {
+        lastActionElement.textContent = gameState.lastAction;
+    }
+}
+
+// Update direction display
+function updateDirectionDisplay() {
+    const directionElement = document.querySelector('.game-direction');
+    if (directionElement) {
+        directionElement.textContent = gameState.direction === 1 ? '↻ Clockwise' : '↺ Counter-clockwise';
+    }
+}
+
+// Update draw pile display
+function updateDrawPile() {
+    const cardsRemaining = document.querySelector('.cards-remaining');
+    if (cardsRemaining) {
+        cardsRemaining.textContent = gameState.drawPile.length;
+    }
+}
+
+// Show message
+function showMessage(message) {
+    const lastActionElement = document.querySelector('.last-action');
+    if (!lastActionElement) return;
+    
+    const originalText = lastActionElement.textContent;
+    lastActionElement.textContent = message;
+    lastActionElement.style.color = '#e74c3c';
+    
+    setTimeout(() => {
+        lastActionElement.textContent = originalText;
+        lastActionElement.style.color = '#636e72';
+    }, 2000);
+}
+
+// End game
+function endGame(winnerIndex) {
+    gameState.gameActive = false;
+    gameState.winner = winnerIndex;
+    
+    const winnerText = document.getElementById('winnerText');
+    const finalScores = document.getElementById('finalScores');
+    
+    if (winnerText) {
+        winnerText.textContent = `${gameState.players[winnerIndex].name} Wins!`;
+    }
+    
+    // Calculate scores
+    if (finalScores) {
+        let scoresHTML = '<h4>Final Scores:</h4>';
+        gameState.players.forEach((player, index) => {
+            const score = calculateScore(player.hand);
+            const isWinner = index === winnerIndex;
+            scoresHTML += `<div style="${isWinner ? 'background: #d4edda; font-weight: bold;' : ''}">${player.name}: ${score} points</div>`;
+        });
+        finalScores.innerHTML = scoresHTML;
+    }
+    
+    if (winnerModal) {
+        winnerModal.classList.add('show');
+    }
+}
+
+// Calculate score from hand
+function calculateScore(hand) {
+    return hand.reduce((total, card) => {
+        if (card.type === 'number') return total + parseInt(card.value);
+        if (card.type === 'action') return total + 20;
+        if (card.type === 'wild') return total + 50;
+        return total;
+    }, 0);
+}
+
+// New game
+function newGame() {
+    gameState = {
+        players: [
+            { id: 1, name: 'You', hand: [], isHuman: true },
+            { id: 2, name: 'Player 2', hand: [], isHuman: false },
+            { id: 3, name: 'Player 3', hand: [], isHuman: false },
+            { id: 4, name: 'Player 4', hand: [], isHuman: false }
+        ],
+        currentPlayer: 0,
+        direction: 1,
+        topCard: null,
+        drawPile: [],
+        discardPile: [],
+        gameActive: true,
+        winner: null,
+        lastAction: 'New game started!',
+        unoCallRequired: {},
+        wildColorChosen: null,
+        pendingWildCard: null
+    };
+    
+    if (winnerModal) winnerModal.classList.remove('show');
+    if (colorPicker) colorPicker.classList.remove('show');
+    if (unoBtn) unoBtn.classList.remove('pulse');
+    
+    createDeck();
+    dealCards();
+    setTopCard();
+    updateDisplay();
+    updateDirectionDisplay();
+}
+
+// Initialize game when page loads
+document.addEventListener('DOMContentLoaded', initGame);
